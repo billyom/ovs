@@ -1,6 +1,6 @@
 {"name": "Open_vSwitch",
- "version": "7.15.1",
- "cksum": "3682332033 23608",
+ "version": "7.15.2",
+ "cksum": "2390903851 23814",
  "tables": {
    "Open_vSwitch": {
      "columns": {
@@ -352,6 +352,11 @@
                    "minInteger": 1},
            "min": 0,
            "max": 1}},
+       "ingress_sched": {
+         "type": {"key": {"type": "string",
+                          "enum": ["set", ["port_prio"]]},
+                  "value": "string",
+                  "min": 0, "max": 1}},
        "error": {
          "type": {"key": "string", "min": 0, "max": 1}}},
      "indexes": [["name"]]},

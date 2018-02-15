@@ -237,6 +237,24 @@ respective parameter. To disable the flow control at tx side, run::
 
     $ ovs-vsctl set Interface dpdk-p0 options:tx-flow-ctrl=false
 
+Ingress Scheduling
+------------------
+
+The ingress scheduling feature is described in general in
+``ovs-vswitchd.conf.db (5)``.
+
+Ingress scheduling currently only supports setting a priority for incoming
+packets for an entire interface. Priority levels 0 (lowest) to 3 (highest) are
+supported.  The default priority is 0.
+
+Interfaces of type ``dpdk`` and ``dpdkvhostuserclient`` support ingress
+scheduling.
+
+To prioritize packets on a particular port:
+
+    $ ovs-vsctl set Interface dpdk0 \
+        ingress_sched=port_prio=3
+
 pdump
 -----
 

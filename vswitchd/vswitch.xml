@@ -3071,6 +3071,33 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
       </column>
     </group>
 
+    <group title="Ingress Scheduling">
+      <p>
+       Configuration to allow certain traffic to be prioritized.  This means
+       some combination of:
+      </p>
+      <ul>
+        <li>
+         prioritized packets are forwarded to their destination port before
+         non-prioritized
+        </li>
+        <li>
+         prioritized packets are less likely to be dropped in an overloaded
+         situation than prioritized packets
+        </li>
+      </ul>
+      <p>
+       Ingress scheduling is supported with the best effort of the Interface
+       type and datapath.  Currently the only field supported is port_prio
+       which applies a priority to all incoming packets on the Interface.
+      </p>
+      <column name="ingress_sched" key="port_prio">
+        <p>
+         Priority levels are 0 (lowest) to 3 (highest).
+        </p>
+      </column>
+    </group>
+
     <group title="Bidirectional Forwarding Detection (BFD)">
       <p>
         BFD, defined in RFC 5880 and RFC 5881, allows point-to-point
@@ -3624,6 +3651,19 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
               type='{"type": "boolean"}'>
         Set to <code>true</code> to enable flow control auto negotiation on
         physical ports. By default, auto-neg is disabled.
+      </column>
+    </group>
+
+    <group title="Ingress Scheduling">
+      <p>
+        Ingress Scheduling allows XXX TODO BOM
+      </p>
+
+      <column name="ingress_sched" key="port_prio" type='{"type": "integer"}'>
+        The ingress priority of the port: 0 lowest to 3 highest. Higher
+        priority ports are read more frequently than lower priority ports. This
+        providing enhanced protection against being dropped due to Rx queue
+        overflow to packets ingressing on those ports.
       </column>
     </group>
 
