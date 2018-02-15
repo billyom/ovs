@@ -22,6 +22,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <net/if.h>
+#include <math.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <stdint.h>
@@ -42,6 +43,7 @@
 #include "dpif.h"
 #include "dpif-netdev-perf.h"
 #include "dpif-provider.h"
+#include "netdev-provider.h"
 #include "dummy.h"
 #include "fat-rwlock.h"
 #include "flow.h"
@@ -487,6 +489,7 @@ static void dp_netdev_actions_free(struct dp_netdev_actions *);
 struct polled_queue {
     struct dp_netdev_rxq *rxq;
     odp_port_t port_no;
+    uint8_t priority;
 };
 
 /* Contained by struct dp_netdev_pmd_thread's 'poll_list' member. */
@@ -626,6 +629,12 @@ struct dpif_netdev {
     uint64_t last_port_seq;
 };
 
+static void
+dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
+                           struct dp_netdev_rxq *rxq,
+                           odp_port_t port_no,
+                           unsigned int *rxd_cnt,
+                           unsigned int *txd_cnt);
 static int get_port_by_number(struct dp_netdev *dp, odp_port_t port_no,
                               struct dp_netdev_port **portp)
     OVS_REQUIRES(dp->port_mutex);
@@ -3259,15 +3268,16 @@ dp_netdev_pmd_flush_output_packets(struct dp_netdev_pmd_thread *pmd,
     return output_cnt;
 }
 
-static int
+static void
 dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
                            struct dp_netdev_rxq *rxq,
-                           odp_port_t port_no)
+                           odp_port_t port_no,
+                           unsigned int *rxd_cnt,
+                           unsigned int *txd_cnt)
 {
     struct dp_packet_batch batch;
     struct cycle_timer timer;
     int error;
-    int batch_cnt = 0, output_cnt = 0;
     uint64_t cycles;
 
     /* Measure duration for polling and processing rx burst. */
@@ -3279,17 +3289,17 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
     error = netdev_rxq_recv(rxq->rx, &batch);
     if (!error) {
         /* At least one packet received. */
+        *rxd_cnt = batch.count;
         *recirc_depth_get() = 0;
         pmd_thread_ctx_time_update(pmd);
 
-        batch_cnt = batch.count;
         dp_netdev_input(pmd, &batch, port_no);
 
         /* Assign processing cycles to rx queue. */
         cycles = cycle_timer_stop(&pmd->perf_stats, &timer);
         dp_netdev_rxq_add_cycles(rxq, RXQ_CYCLES_PROC_CURR, cycles);
 
-        output_cnt = dp_netdev_pmd_flush_output_packets(pmd, false);
+        *txd_cnt = dp_netdev_pmd_flush_output_packets(pmd, false);
     } else {
         /* Discard cycles. */
         cycle_timer_stop(&pmd->perf_stats, &timer);
@@ -3299,11 +3309,11 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
             VLOG_ERR_RL(&rl, "error receiving data from %s: %s",
                     netdev_rxq_get_name(rxq->rx), ovs_strerror(error));
         }
+        *txd_cnt = 0;
     }
 
     pmd->ctx.last_rxq = NULL;
 
-    return batch_cnt + output_cnt;
 }
 
 static struct tx_port *
@@ -3935,11 +3945,16 @@ dpif_netdev_run(struct dpif *dpif)
         HMAP_FOR_EACH (port, node, &dp->ports) {
             if (!netdev_is_pmd(port->netdev)) {
                 int i;
+                unsigned int rxd_cnt;
+                unsigned int txd_cnt;
 
                 for (i = 0; i < port->n_rxq; i++) {
-                    if (dp_netdev_process_rxq_port(non_pmd,
-                                                   &port->rxqs[i],
-                                                   port->port_no)) {
+                    dp_netdev_process_rxq_port(non_pmd,
+                                               &port->rxqs[i],
+                                               port->port_no,
+                                               &rxd_cnt,
+                                               &txd_cnt);
+                    if (rxd_cnt) {
                         need_to_flush = false;
                     }
                 }
@@ -4068,6 +4083,21 @@ pmd_free_static_tx_qid(struct dp_netdev_pmd_thread *pmd)
 }
 
 static int
+get_nb_rxqdesc (struct netdev *netdev) {
+    struct smap smap = SMAP_INITIALIZER(&smap);
+    netdev_get_config(netdev, &smap);
+    const char *n_rxq_s = smap_get(&smap, "configured_rxq_descriptors");
+    long n_rxq;
+    str_to_long(n_rxq_s, 10, &n_rxq);
+    smap_destroy(&smap);
+    return (int) n_rxq;
+}
+#define MAX_PRIO_READS (48)
+#define MIN_PRIO_READS (1)
+#define RAW_TO_NORM_FN_EXP (-0.0187)
+#define PRIO_TO_MAX_READS_SCALAR (10)
+
+static int
 pmd_load_queues_and_ports(struct dp_netdev_pmd_thread *pmd,
                           struct polled_queue **ppoll_list)
 {
@@ -4079,11 +4109,52 @@ pmd_load_queues_and_ports(struct dp_netdev_pmd_thread *pmd,
     poll_list = xrealloc(poll_list, hmap_count(&pmd->poll_list)
                                     * sizeof *poll_list);
 
+    /* Find max rxq len - used to weight raw priority to account for differing
+     * queue lengths. Has no effect on q's for non-prioritized netdevs. */
+    int max_nb_rxqdesc = 0;
+    HMAP_FOR_EACH (poll, node, &pmd->poll_list) {
+        int nb_rxqdesc = get_nb_rxqdesc(poll->rxq->rx->netdev);
+        if (nb_rxqdesc > max_nb_rxqdesc) {
+            max_nb_rxqdesc = nb_rxqdesc;
+        }
+    }
+
+    /* Populate ppoll_list; Assign 'raw' queue q priorities. */
     i = 0;
+    uint16_t min_prio = UINT16_MAX;
+    uint16_t max_prio = 0;
     HMAP_FOR_EACH (poll, node, &pmd->poll_list) {
         poll_list[i].rxq = poll->rxq;
         poll_list[i].port_no = poll->rxq->port->port_no;
+
+        int nb_rxqdesc = get_nb_rxqdesc(poll->rxq->rx->netdev);
+        int prio_max_reads = poll->rxq->rx->netdev->ingress_prio
+                             * PRIO_TO_MAX_READS_SCALAR * max_nb_rxqdesc
+						     / nb_rxqdesc;
+        poll_list[i].priority = prio_max_reads;
+        if (prio_max_reads > max_prio) {
+            max_prio = prio_max_reads;
+        }
+        if (prio_max_reads < min_prio) {
+            min_prio = prio_max_reads;
+        }
         i++;
+    }
+
+    /* Normalize 'raw' queue priorities. Adjust so that:
+     * 1. MAX_PRIO_READS is not exeeded.
+     * 2. The lowest prio_read value for the PMD is 1.
+     * 3. The ratio between raw prio_read values is more or less maintained
+     *    for lower values but higher values reduced to meet criterion 1.
+     * Using a exponential fn(x): x = a + b^(-ex) with well-chosen parameters
+     * meets these requirements. */
+    int end_idx = i;
+    for (i = 0; i < end_idx; i++) {
+        int current = poll_list[i].priority;
+        current -= min_prio;
+        poll_list[i].priority = (int) MAX_PRIO_READS -
+                                (MAX_PRIO_READS - MIN_PRIO_READS) *
+                                exp(RAW_TO_NORM_FN_EXP * current);
     }
 
     pmd_load_cached_ports(pmd);
@@ -4104,7 +4175,6 @@ pmd_thread_main(void *f_)
     bool exiting;
     int poll_cnt;
     int i;
-    int process_packets = 0;
 
     poll_list = NULL;
 
@@ -4142,10 +4212,17 @@ reload:
 
         pmd_perf_start_iteration(s);
         for (i = 0; i < poll_cnt; i++) {
-            process_packets =
+            unsigned int priority_max_reads = poll_list[i].priority;
+            unsigned int rxd_cnt;
+            unsigned int txd_cnt;
+
+            do {
                 dp_netdev_process_rxq_port(pmd, poll_list[i].rxq,
-                                           poll_list[i].port_no);
-            iter_packets += process_packets;
+                                           poll_list[i].port_no,
+                                           &rxd_cnt, &txd_cnt);
+                iter_packets = iter_packets + rxd_cnt + txd_cnt;
+                priority_max_reads--;
+            } while (rxd_cnt >= NETDEV_MAX_BURST && priority_max_reads);
         }
 
         if (!iter_packets) {

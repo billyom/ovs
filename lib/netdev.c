@@ -42,6 +42,7 @@
 #include "netdev-dpdk.h"
 #include "netdev-provider.h"
 #include "netdev-vport.h"
+#include "openvswitch/ofp-parse.h"
 #include "odp-netlink.h"
 #include "openflow/openflow.h"
 #include "packets.h"
@@ -976,6 +977,47 @@ bool
 netdev_mtu_is_user_config(struct netdev *netdev)
 {
     return netdev->mtu_user_config;
+}
+
+/* Sets the Ingress Scheduling policy of 'netdev'.
+ *
+ * If successful, returns 0.  Returns EOPNOTSUPP if 'netdev' does not support
+ * the specified policy */
+int
+netdev_set_ingress_sched(struct netdev *netdev,
+                         const struct smap *ingress_sched_smap)
+{
+    /* Extract port priority here; It is common to all netdevs. */
+    char *mallocd_err_str; /* str_to_x mallocs a str we'll need to free */
+    uint8_t port_prio;
+    const char *port_prio_str = smap_get(ingress_sched_smap, "port_prio");
+
+    if (port_prio_str) {
+        mallocd_err_str = str_to_u8(port_prio_str, "port_prio",
+                                &port_prio);
+        if (mallocd_err_str) {
+            VLOG_ERR ("%s while parsing ingress_sched:port_prio for %s",
+                      mallocd_err_str, netdev->name);
+            free(mallocd_err_str);
+            mallocd_err_str = NULL;
+            return EINVAL;
+        }
+        netdev->ingress_prio = port_prio;
+    }
+
+    /* Pass rest of config on to specific netdev impl. */
+    const struct netdev_class *class = netdev->netdev_class;
+    int error;
+
+    error = class->set_ingress_sched ?
+        class->set_ingress_sched(netdev, ingress_sched_smap) : EOPNOTSUPP;
+    if (error && error != EOPNOTSUPP) {
+        VLOG_DBG_RL(&rl, "failed to set ingress scheduling for network " \
+                    "device %s: %s",
+                    netdev_get_name(netdev), ovs_strerror(error));
+    }
+
+    return error;
 }
 
 /* Returns the ifindex of 'netdev', if successful, as a positive number.  On

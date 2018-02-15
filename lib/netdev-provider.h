@@ -78,7 +78,8 @@ struct netdev {
      * modify them. */
     int n_txq;
     int n_rxq;
-    struct shash_node *node;            /* Pointer to element in global map. */
+    int ingress_prio;             /* 0 lowest to 3 highest. Default 0. */
+    struct shash_node *node;          /* Pointer to element in global map. */
     struct ovs_list saved_flags_list; /* Contains "struct netdev_saved_flags". */
 };
 
@@ -411,6 +412,14 @@ struct netdev_class {
      * this function should return EOPNOTSUPP.  This function may be set to
      * null if it would always return EOPNOTSUPP. */
     int (*set_mtu)(struct netdev *netdev, int mtu);
+
+    /* Sets 'netdev''s ingress scheduling policy.
+     *
+     * If 'netdev' does not support the specified policy then this function
+     * should return EOPNOTSUPP.  This function may be set to null if it would
+     * always return EOPNOTSUPP. */
+    int (*set_ingress_sched)(struct netdev *netdev,
+         const struct smap *ingress_sched_smap);
 
     /* Returns the ifindex of 'netdev', if successful, as a positive number.
      * On failure, returns a negative errno value.

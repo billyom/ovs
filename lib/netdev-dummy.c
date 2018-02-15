@@ -1415,6 +1415,7 @@ netdev_dummy_update_flags(struct netdev *netdev_,
     netdev_dummy_get_etheraddr,                                 \
     netdev_dummy_get_mtu,                                       \
     netdev_dummy_set_mtu,                                       \
+    NULL,                       /* set_ingress_sched */         \
     netdev_dummy_get_ifindex,                                   \
     NULL,                       /* get_carrier */               \
     NULL,                       /* get_carrier_resets */        \

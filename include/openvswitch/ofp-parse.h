@@ -33,6 +33,9 @@ extern "C" {
 struct match;
 struct mf_field;
 struct ofputil_port_map;
+struct tun_table;
+struct flow_wildcards;
+struct ofputil_port_map;
 
 struct ofp_protocol {
     const char *name;

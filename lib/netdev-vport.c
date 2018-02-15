@@ -902,6 +902,7 @@ netdev_vport_get_ifindex(const struct netdev *netdev_)
     netdev_vport_get_etheraddr,                             \
     NULL,                       /* get_mtu */               \
     NULL,                       /* set_mtu */               \
+    NULL,                       /* set_ingress_sched */     \
     GET_IFINDEX,                                            \
     NULL,                       /* get_carrier */           \
     NULL,                       /* get_carrier_resets */    \

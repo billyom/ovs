@@ -39,6 +39,8 @@
 #include <rte_vhost.h>
 #include <rte_version.h>
 
+#include <openvswitch/ofp-parse.h>
+#include <openvswitch/ofp-util.h>
 #include "dirs.h"
 #include "dp-packet.h"
 #include "dpdk.h"
@@ -88,6 +90,7 @@ static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
                                              + sizeof(struct dp_packet) \
                                              + RTE_PKTMBUF_HEADROOM),   \
                                              RTE_CACHE_LINE_SIZE)
+#define MAX_PORT_PRIO               3
 #define NETDEV_DPDK_MBUF_ALIGN      1024
 #define NETDEV_DPDK_MAX_PKT_LEN     9728
 
@@ -807,6 +810,7 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
                  dev->up.name, n_rxq, n_txq, rte_strerror(-diag));
         return -diag;
     }
+
 
     diag = rte_eth_dev_start(dev->port_id);
     if (diag) {
@@ -2213,6 +2217,13 @@ netdev_dpdk_set_mtu(struct netdev *netdev, int mtu)
 }
 
 static int
+netdev_dpdk_set_ingress_sched(struct netdev *netdev OVS_UNUSED,
+                              const struct smap *ingress_sched_smap OVS_UNUSED)
+{
+    return ENOTSUP; /* XXX placeholder for eventual ingress filtering */
+}
+
+static int
 netdev_dpdk_get_carrier(const struct netdev *netdev, bool *carrier);
 
 static int
@@ -3550,7 +3561,6 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
         && dev->txq_size == dev->requested_txq_size
         && dev->socket_id == dev->requested_socket_id) {
         /* Reconfiguration is unnecessary */
-
         goto out;
     }
 
@@ -3742,6 +3752,7 @@ unlock:
     netdev_dpdk_get_etheraddr,                                \
     netdev_dpdk_get_mtu,                                      \
     netdev_dpdk_set_mtu,                                      \
+    netdev_dpdk_set_ingress_sched,                            \
     netdev_dpdk_get_ifindex,                                  \
     GET_CARRIER,                                              \
     netdev_dpdk_get_carrier_resets,                           \

@@ -831,6 +831,7 @@ bridge_delete_or_reconfigure_ports(struct bridge *br)
         }
 
         iface_set_netdev_mtu(iface->cfg, iface->netdev);
+        netdev_set_ingress_sched(iface->netdev, &iface->cfg->ingress_sched);
 
         /* If the requested OpenFlow port for 'iface' changed, and it's not
          * already the correct port, then we might want to temporarily delete
@@ -1794,6 +1795,7 @@ iface_do_create(const struct bridge *br,
     }
 
     iface_set_netdev_mtu(iface_cfg, netdev);
+    netdev_set_ingress_sched(netdev, &iface_cfg->ingress_sched);
 
     *ofp_portp = iface_pick_ofport(iface_cfg);
     error = ofproto_port_add(br->ofproto, netdev, ofp_portp);

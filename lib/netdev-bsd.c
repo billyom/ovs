@@ -1506,6 +1506,7 @@ netdev_bsd_update_flags(struct netdev *netdev_, enum netdev_flags off,
     netdev_bsd_get_etheraddr,                        \
     netdev_bsd_get_mtu,                              \
     NULL, /* set_mtu */                              \
+    NULL, /* set_ingress_sched */                    \
     netdev_bsd_get_ifindex,                          \
     netdev_bsd_get_carrier,                          \
     NULL, /* get_carrier_resets */                   \

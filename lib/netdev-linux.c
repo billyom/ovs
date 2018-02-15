@@ -2867,6 +2867,7 @@ netdev_linux_update_flags(struct netdev *netdev_, enum netdev_flags off,
     netdev_linux_get_etheraddr,                                 \
     netdev_linux_get_mtu,                                       \
     netdev_linux_set_mtu,                                       \
+    NULL,                       /* set_ingress_sched */         \
     netdev_linux_get_ifindex,                                   \
     netdev_linux_get_carrier,                                   \
     netdev_linux_get_carrier_resets,                            \
