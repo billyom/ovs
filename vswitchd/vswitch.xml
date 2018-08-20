@@ -3196,6 +3196,21 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
       </column>
     </group>
 
+    <group title="Ingress Scheduling">
+      <p>
+       Configuration to allow rxd traffic to be prioritized on a per Interface
+       basis.
+      </p>
+      <column name="other_config" key="port_prio">
+        <p>
+          The ingress priority of the port: 0 (lowest) to 3 (highest). Higher
+          priority ports are read more frequently than lower priority ports.
+          This provides enhanced protection to packets ingressing high priority
+          ports against being dropped due to Rx queue overflow.
+        </p>
+      </column>
+    </group>
+
     <group title="Bidirectional Forwarding Detection (BFD)">
       <p>
         BFD, defined in RFC 5880 and RFC 5881, allows point-to-point

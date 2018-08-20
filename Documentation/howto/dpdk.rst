@@ -360,6 +360,21 @@ devices to bridge ``br0``. Once complete, follow the below steps:
 
        $ cat /proc/interrupts | grep virtio
 
+Ingress Scheduling
+------------------
+
+The ingress scheduling feature is described in general in
+``ovs-vswitchd.conf.db (5)``.
+
+Ingress scheduling currently supports setting a priority for incoming packets
+for an entire interface. Priority levels 0 (lowest) to 3 (highest) are
+supported.  The default priority is 0.
+
+To prioritize packets on a particular port:
+
+    $ ovs-vsctl set Interface dpdk0 \
+        ingress_sched=port_prio=3
+
 .. _dpdk-flow-hardware-offload:
 
 Flow Hardware Offload (Experimental)
