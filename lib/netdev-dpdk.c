@@ -1044,6 +1044,7 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
         return -diag;
     }
 
+
     diag = rte_eth_dev_start(dev->port_id);
     if (diag) {
         VLOG_ERR("Interface %s start error: %s", dev->up.name,
@@ -1554,7 +1555,16 @@ netdev_dpdk_get_config(const struct netdev *netdev, struct smap *args)
         }
         smap_add(args, "lsc_interrupt_mode",
                  dev->lsc_interrupt_mode ? "true" : "false");
+    } else if (dev->type == DPDK_DEV_VHOST) {
+        int vid = netdev_dpdk_get_vid(dev);
+        if (vid >= 0) {
+            struct rte_vhost_vring vring;
+            rte_vhost_get_vhost_vring(vid, VIRTIO_RXQ, &vring);
+            smap_add_format(args, "configured_rxq_descriptors", "%d",
+                            vring.size);
+        }
     }
+
     ovs_mutex_unlock(&dev->mutex);
 
     return 0;
